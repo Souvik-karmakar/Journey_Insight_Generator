@@ -10,6 +10,12 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 
 # --------------------------------------------------
+# SAFE TOKEN LIMIT (FOR 70B MODEL)
+# --------------------------------------------------
+MAX_PROMPT_CHARS = 20000  # ~5-6k tokens safe zone
+
+
+# --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
 st.set_page_config(page_title="Journey Retail Media AI", layout="wide")
@@ -115,6 +121,9 @@ def compute_metrics(df):
     if trips_col and "ctr_percent" in df.columns:
         df_sorted = df.sort_values(trips_col, ascending=False)
 
+        # limit entity size to avoid token overflow
+        df_sorted = df_sorted.head(15)
+
         metrics["entities"] = [
             {
                 "name": str(row[df.columns[0]]),
@@ -166,7 +175,7 @@ KPIs:
 
 
 # --------------------------------------------------
-# LLM STRATEGIC GENERATION (STRICT NUMERIC CONTROL)
+# LLM STRATEGIC GENERATION (WITH TOKEN CONTROL)
 # --------------------------------------------------
 def generate_insights(documents, groq_key):
 
@@ -177,6 +186,12 @@ def generate_insights(documents, groq_key):
     )
 
     context = "\n\n".join([doc.page_content for doc in documents])
+
+    # ---------------- TOKEN SAFETY ----------------
+    if len(context) > MAX_PROMPT_CHARS:
+        st.warning("⚠️ Large dataset detected. Compressing context for safe execution.")
+        context = context[:MAX_PROMPT_CHARS]
+    # ----------------------------------------------
 
     prompt = f"""
 You are a Senior Retail Media Strategy Consultant you have technical as well as business knowledge.
@@ -196,13 +211,13 @@ CRITICAL RULES:
 5. Peak weekday = High CTR + Strong Trip Volume.
 6. If weekday has highest CTR but moderate trips, highlight engagement strength.
 7. Recommendations must be realistic and gentle (5% shift max).
-8. No exaggerated claims (no "increase 15% performance").
+8. No exaggerated claims.
 9. Be practical and executive.
-10.provide structured actionable recommendations 
-11.Strong categories should be highlighted based on high CTR and Strong Trip Volume
-12.Strong cities should be highlighted based on high CTR and Strong Trip Volume
-13.Strong Car Type should be highlighted based on high CTR and Strong Trip Volume
-14. At Last provide one overall summary of whole Zeast of recommendation adn takeaways.
+10. Provide structured actionable recommendations.
+11. Strong categories based on high CTR and Strong Trip Volume.
+12. Strong cities based on high CTR and Strong Trip Volume.
+13. Strong Car Type based on high CTR and Strong Trip Volume.
+14. At last provide one overall summary of whole Zeast of recommendation and takeaways.
 
 Structure EXACTLY:
 
@@ -305,4 +320,3 @@ if st.button("Generate AI Insights"):
 
     st.subheader("🔎 Insight Preview")
     st.write(insights)
-
