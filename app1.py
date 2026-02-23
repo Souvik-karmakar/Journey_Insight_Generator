@@ -23,7 +23,7 @@ uploaded_file = st.file_uploader("Upload Excel File (.xlsx)", type=["xlsx"])
 # --------------------------------------------------
 def clean_sheet(file, sheet_name):
 
-    df_raw = pd.read_excel(file, sheet_name=sheet_name, header=None)
+    df_raw = pd.read_excel(file, sheet_name=sheet_name, header=None)
 
     header_row = None
     for i in range(len(df_raw)):
@@ -380,3 +380,4 @@ if st.button("Generate AI Insights"):
 
     st.subheader(":mag_right: Insight Preview")
     st.write(insights)
+
