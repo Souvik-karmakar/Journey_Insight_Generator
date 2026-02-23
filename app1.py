@@ -210,7 +210,7 @@ def generate_insights(documents, groq_key):
     context = "\n\n".join([doc.page_content for doc in documents])
 
     prompt = f"""
-You are a Senior Retail Media Performance Director.
+You are a Senior Retail Media Performance insight generation Expert.
 
 Below is structured campaign KPI data:
 
@@ -239,17 +239,17 @@ IMPORTANT RULES:
 
 4. Category Level:
    - Focus ONLY on Top 5 categories by Total Trips
-   - Call out 2 strongest and 2 weakest properly
+   - Call out 2 strongest with good amount of trip and good CTR  and 2 weakest properly with less CTR
 
 5. City Level:
    - Focus ONLY on Top 10 cities by Total Trips
-   - Identify cities with BOTH high CTR and high Trips as strong
-   - Identify cities with low CTR and low Trips as weak
+   - Identify cities with BOTH good CTR and high Trips as strong
+   - Identify cities with low CTR  as weak
 
 6. Weekday Level:
-   - Rank days by Total Trips
-   - Identify Peak Day (highest trips)
-   - Identify Lowest Day (lowest trips)
+   - Rank days by Total Trips and Strong CTR
+   - Identify Peak Day (highest trips and Strong CTR)
+   - Identify Lowest Day (low CTR)
    - Recommend weekday budget shift strategy
 
 7. Budget Strategy:
@@ -259,17 +259,15 @@ IMPORTANT RULES:
 Structure output EXACTLY as:
 
 === Overall Campaign Level ===
+
 Performance Diagnosis:
-Strong Callout:
-Weak Callout:
-Budget Strategy:
-Scaling Strategy:
-Risk Signal:
 
 === Ad Group Level ===
-(same structure)
+
+Performance Diagnosis:
 
 === Category Level (Top 5 Only) ===
+
 Strong Categories:
 Weak Categories:
 Budget Reallocation:
@@ -277,6 +275,7 @@ Scaling Opportunity:
 Risk:
 
 === City Level (Top 10 Only) ===
+
 Strong Cities:
 Weak Cities:
 Geo Budget Strategy:
@@ -290,12 +289,14 @@ Allocation Strategy:
 Risk:
 
 === Weekday Level ===
+
 Peak Day:
 Lowest Day:
 Weekday Budget Strategy:
 Risk:
 
 === 30 DAY EXECUTION PLAN ===
+
 Week 1:
 Week 2:
 Week 3:
@@ -367,4 +368,5 @@ if st.button("Generate AI Insights"):
         )
 
     st.subheader("🔎 Insight Preview")
+
     st.write(insights)
