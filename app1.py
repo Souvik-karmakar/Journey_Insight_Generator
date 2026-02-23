@@ -85,6 +85,7 @@ def compute_metrics(df):
         return (
             series.astype(str)
             .str.replace(",", "", regex=False)
+            .str.replace("%", "", regex=False)
             .replace(["", "nan", "None"], "0")
             .pipe(pd.to_numeric, errors="coerce")
             .fillna(0)
@@ -94,30 +95,25 @@ def compute_metrics(df):
         if col and col in df.columns:
             df[col] = clean_numeric(df[col])
 
-    if impressions_col:
-        df = df[df[impressions_col] > 0]
+    # Totals
+    metrics["total_impressions"] = float(df[impressions_col].sum()) if impressions_col else 0
+    metrics["total_clicks"] = float(df[clicks_col].sum()) if clicks_col else 0
+    metrics["total_trips"] = float(df[trips_col].sum()) if trips_col else 0
 
-    total_impressions = df[impressions_col].sum() if impressions_col else 0
-    total_clicks = df[clicks_col].sum() if clicks_col else 0
-    total_trips = df[trips_col].sum() if trips_col else 0
-
-    metrics["total_impressions"] = float(total_impressions)
-    metrics["total_clicks"] = float(total_clicks)
-    metrics["total_trips"] = float(total_trips)
-
+    # CTR
     if ctr_col:
-        df["ctr_percent"] = df[ctr_col] * 100
+        df["ctr_percent"] = df[ctr_col]
     elif impressions_col and clicks_col:
         df["ctr_percent"] = (df[clicks_col] / df[impressions_col]) * 100
 
-    if "ctr_percent" in df.columns:
-        metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
+    metrics["avg_ctr_percent"] = round(df["ctr_percent"].mean(), 2) if "ctr_percent" in df.columns else 0
 
+    # Identifier
     identifier_candidates = [
         "ad_group_name", "ad_group",
         "category", "city",
         "place_name", "car_type",
-        "ad_name", "day"
+        "ad_name", "weekday", "day"
     ]
 
     id_col = next((col for col in identifier_candidates if col in df.columns), None)
@@ -130,29 +126,18 @@ def compute_metrics(df):
     if "ctr_percent" in df.columns:
         df = df[df["ctr_percent"] > 0]
 
-    if id_col and len(df) > 1:
+    # 🔥 IMPORTANT: send FULL ranked table (not only top 3)
+    if id_col and trips_col and len(df) > 1:
 
         df_sorted = df.sort_values(trips_col, ascending=False)
 
-        top = df_sorted.head(3)
-        bottom = df_sorted.tail(3)
-
-        metrics["top_entities"] = [
+        metrics["ranked_entities"] = [
             {
                 "name": str(row[id_col]),
                 "trips": float(row[trips_col]),
                 "ctr_percent": round(float(row["ctr_percent"]), 2)
             }
-            for _, row in top.iterrows()
-        ]
-
-        metrics["bottom_entities"] = [
-            {
-                "name": str(row[id_col]),
-                "trips": float(row[trips_col]),
-                "ctr_percent": round(float(row["ctr_percent"]), 2)
-            }
-            for _, row in bottom.iterrows()
+            for _, row in df_sorted.iterrows()
         ]
 
     metrics["row_count"] = len(df)
@@ -370,3 +355,4 @@ if st.button("Generate AI Insights"):
     st.subheader("🔎 Insight Preview")
 
     st.write(insights)
+
