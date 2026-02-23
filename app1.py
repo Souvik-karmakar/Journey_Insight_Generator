@@ -8,6 +8,7 @@ from langchain_groq import ChatGroq
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
+
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
@@ -18,57 +19,56 @@ st.markdown("Upload Excel + Enter Groq API Key → Generate Executive PDF")
 groq_key = st.text_input("Enter Groq API Key", type="password")
 uploaded_file = st.file_uploader("Upload Excel File (.xlsx)", type=["xlsx"])
 
+
 # --------------------------------------------------
 # SMART SHEET CLEANING
 # --------------------------------------------------
 def clean_sheet(file, sheet_name):
 
-    df_raw = pd.read_excel(file, sheet_name=sheet_name, header=None)
+    df_raw = pd.read_excel(file, sheet_name=sheet_name, header=None)
 
-    header_row = None
-    for i in range(len(df_raw)):
-        row = df_raw.iloc[i].astype(str).str.lower()
-        if any("impression" in x or "click" in x or "trip" in x for x in row):
-            header_row = i
-            break
+    header_row = None
+    for i in range(len(df_raw)):
+        row = df_raw.iloc[i].astype(str).str.lower()
+        if any("impression" in x or "click" in x or "trip" in x for x in row):
+            header_row = i
+            break
 
-    if header_row is None:
-        return pd.DataFrame()
+    if header_row is None:
+        return pd.DataFrame()
 
-    df = pd.read_excel(file, sheet_name=sheet_name, header=header_row)
+    df = pd.read_excel(file, sheet_name=sheet_name, header=header_row)
 
-    df.columns = df.columns.astype(str).str.strip().str.lower()
-    df = df.loc[:, ~df.columns.duplicated()]
-    df = df.dropna(axis=1, how="all")
-    df = df.dropna(how="all").reset_index(drop=True)
+    df.columns = df.columns.astype(str).str.strip().str.lower()
+    df = df.loc[:, ~df.columns.duplicated()]
+    df = df.dropna(axis=1, how="all")
+    df = df.dropna(how="all").reset_index(drop=True)
 
-    return df
-
+    return df
 
 
 # --------------------------------------------------
 # GRANULARITY DETECTION
 # --------------------------------------------------
 def detect_granularity(sheet_name):
-    name = sheet_name.lower()
+    name = sheet_name.lower()
 
-    if "overall" in name:
-        return "Overall Campaign Level"
-    elif "ad_group" in name:
-        return "Ad Group Level"
-    elif "city" in name:
-        return "City Level"
-    elif "categorie" in name:
-        return "Category Level"
-    elif "top_place" in name:
-        return "Top Places Level"
-    elif "car" in name:
-        return "Car Type Level"
-    elif "day" in name:
-        return "Day of Week Level"
-    else:
-        return "Other"
-
+    if "overall" in name:
+        return "Overall Campaign Level"
+    elif "ad_group" in name:
+        return "Ad Group Level"
+    elif "city" in name:
+        return "City Level"
+    elif "categorie" in name:
+        return "Category Level"
+    elif "top_place" in name:
+        return "Top Places Level"
+    elif "car" in name:
+        return "Car Type Level"
+    elif "day" in name:
+        return "Day of Week Level"
+    else:
+        return "Other"
 
 
 # --------------------------------------------------
@@ -76,91 +76,93 @@ def detect_granularity(sheet_name):
 # --------------------------------------------------
 def compute_metrics(df):
 
-    metrics = {}
+    metrics = {}
 
-    impressions_col = next((c for c in df.columns if "impression" in c), None)
-    clicks_col = next((c for c in df.columns if c == "clicks"), None)
-    trips_col = next((c for c in df.columns if "trip" in c and "%" not in c), None)
-    ctr_col = next((c for c in df.columns if c == "ctr"), None)
+    impressions_col = next((c for c in df.columns if "impression" in c), None)
+    clicks_col = next((c for c in df.columns if c == "clicks"), None)
+    trips_col = next((c for c in df.columns if "trip" in c and "%" not in c), None)
+    ctr_col = next((c for c in df.columns if c == "ctr"), None)
 
-    def clean_numeric(series):
-        return (
-            series.astype(str)
-            .str.replace(",", "", regex=False)
-            .replace(["", "nan", "None"], "0")
-            .pipe(pd.to_numeric, errors="coerce")
-            .fillna(0)
-        )
+    def clean_numeric(series):
+        return (
+            series.astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("%", "", regex=False)
+            .replace(["", "nan", "None"], "0")
+            .pipe(pd.to_numeric, errors="coerce")
+            .fillna(0)
+        )
 
-    for col in [impressions_col, clicks_col, trips_col, ctr_col]:
-        if col and col in df.columns:
-            df[col] = clean_numeric(df[col])
+    for col in [impressions_col, clicks_col, trips_col, ctr_col]:
+        if col and col in df.columns:
+            df[col] = clean_numeric(df[col])
 
-    if impressions_col:
-        df = df[df[impressions_col] > 0]
+    if impressions_col:
+        df = df[df[impressions_col] > 0]
 
-    total_impressions = df[impressions_col].sum() if impressions_col else 0
-    total_clicks = df[clicks_col].sum() if clicks_col else 0
-    total_trips = df[trips_col].sum() if trips_col else 0
+    total_impressions = df[impressions_col].sum() if impressions_col else 0
+    total_clicks = df[clicks_col].sum() if clicks_col else 0
+    total_trips = df[trips_col].sum() if trips_col else 0
 
-    metrics["total_impressions"] = float(total_impressions)
-    metrics["total_clicks"] = float(total_clicks)
-    metrics["total_trips"] = float(total_trips)
+    metrics["total_impressions"] = float(total_impressions)
+    metrics["total_clicks"] = float(total_clicks)
+    metrics["total_trips"] = float(total_trips)
 
-    if ctr_col:
-        df["ctr_percent"] = df[ctr_col] * 100
-    elif impressions_col and clicks_col:
-        df["ctr_percent"] = (df[clicks_col] / df[impressions_col]) * 100
+    if ctr_col:
+        df["ctr_percent"] = df[ctr_col]
+        if df["ctr_percent"].max() <= 1:
+            df["ctr_percent"] = df["ctr_percent"] * 100
+    elif impressions_col and clicks_col:
+        df["ctr_percent"] = (df[clicks_col] / df[impressions_col]) * 100
 
-    if "ctr_percent" in df.columns:
-        metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
+    if "ctr_percent" in df.columns:
+        metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
 
-    identifier_candidates = [
-        "ad_group_name", "ad_group",
-        "category", "city",
-        "place_name", "car_type",
-        "ad_name", "day"
-    ]
+    identifier_candidates = [
+        "ad_group_name", "ad_group",
+        "category", "city",
+        "place_name", "car_type",
+        "ad_name", "day"
+    ]
 
-    id_col = next((col for col in identifier_candidates if col in df.columns), None)
+    id_col = next((col for col in identifier_candidates if col in df.columns), None)
 
-    ignore_values = ["0", "multi unit", "\\n", "\\N", "nan", None]
+    ignore_values = ["0", "multi unit", "\\n", "\\N", "nan", None]
 
-    if id_col:
-        df = df[~df[id_col].astype(str).str.lower().isin(ignore_values)]
+    if id_col:
+        df = df[~df[id_col].astype(str).str.lower().isin(ignore_values)]
 
-    if "ctr_percent" in df.columns:
-        df = df[df["ctr_percent"] > 0]
+    if "ctr_percent" in df.columns:
+        df = df[df["ctr_percent"] > 0]
 
-    if id_col and len(df) > 1:
+    if id_col and len(df) > 1:
 
-        df_sorted = df.sort_values(trips_col, ascending=False)
+        df_sorted = df.sort_values(trips_col, ascending=False)
 
-        top = df_sorted.head(3)
-        bottom = df_sorted.tail(3)
+        top = df_sorted.head(3)
+        bottom = df_sorted.tail(3)
 
-        metrics["top_entities"] = [
-            {
-                "name": str(row[id_col]),
-                "trips": float(row[trips_col]),
-                "ctr_percent": round(float(row["ctr_percent"]), 2)
-            }
-            for _, row in top.iterrows()
-        ]
+        metrics["top_entities"] = [
+            {
+                "name": str(row[id_col]),
+                "trips": float(row[trips_col]),
+                "ctr_percent": round(float(row["ctr_percent"]), 2)
+            }
+            for _, row in top.iterrows()
+        ]
 
-        metrics["bottom_entities"] = [
-            {
-                "name": str(row[id_col]),
-                "trips": float(row[trips_col]),
-                "ctr_percent": round(float(row["ctr_percent"]), 2)
-            }
-            for _, row in bottom.iterrows()
-        ]
+        metrics["bottom_entities"] = [
+            {
+                "name": str(row[id_col]),
+                "trips": float(row[trips_col]),
+                "ctr_percent": round(float(row["ctr_percent"]), 2)
+            }
+            for _, row in bottom.iterrows()
+        ]
 
-    metrics["row_count"] = len(df)
+    metrics["row_count"] = len(df)
 
-    return metrics
-
+    return metrics
 
 
 # --------------------------------------------------
@@ -168,20 +170,20 @@ def compute_metrics(df):
 # --------------------------------------------------
 def ingest_excel(file):
 
-    xls = pd.ExcelFile(file)
-    documents = []
+    xls = pd.ExcelFile(file)
+    documents = []
 
-    for sheet in xls.sheet_names:
+    for sheet in xls.sheet_names:
 
-        df = clean_sheet(file, sheet)
+        df = clean_sheet(file, sheet)
 
-        if df.empty:
-            continue
+        if df.empty:
+            continue
 
-        granularity = detect_granularity(sheet)
-        metrics = compute_metrics(df)
+        granularity = detect_granularity(sheet)
+        metrics = compute_metrics(df)
 
-        structured_content = f"""
+        structured_content = f"""
 Granularity: {granularity}
 Sheet Name: {sheet}
 
@@ -189,15 +191,14 @@ KPIs:
 {json.dumps(metrics, indent=2)}
 """
 
-        doc = Document(
-            page_content=structured_content,
-            metadata={"sheet": sheet}
-        )
+        doc = Document(
+            page_content=structured_content,
+            metadata={"sheet": sheet}
+        )
 
-        documents.append(doc)
+        documents.append(doc)
 
-    return documents
-
+    return documents
 
 
 # --------------------------------------------------
@@ -205,15 +206,15 @@ KPIs:
 # --------------------------------------------------
 def generate_insights(documents, groq_key):
 
-    llm = ChatGroq(
-        groq_api_key=groq_key,
-        model_name="llama-3.3-70b-versatile",
-        temperature=0.15
-    )
+    llm = ChatGroq(
+        groq_api_key=groq_key,
+        model_name="llama-3.3-70b-versatile",
+        temperature=0.15
+    )
 
-    context = "\n\n".join([doc.page_content for doc in documents])
+    context = "\n\n".join([doc.page_content for doc in documents])
 
-    prompt = f"""
+   prompt = f"""
 You are a Senior Reatil media Architect, you are good at insight generation and provide strategic recommendation .
 
 Below is structured campaign KPI data:
@@ -317,9 +318,8 @@ Avoid repetition.
 Executive tone.
 """
 
-    response = llm.invoke(prompt)
-    return response.content
-
+    response = llm.invoke(prompt)
+    return response.content
 
 
 # --------------------------------------------------
@@ -327,22 +327,21 @@ Executive tone.
 # --------------------------------------------------
 def generate_pdf(text):
 
-    temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(temp_pdf.name)
-    styles = getSampleStyleSheet()
-    elements = []
+    temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp_pdf.name)
+    styles = getSampleStyleSheet()
+    elements = []
 
-    elements.append(Paragraph("Journey Campaign Strategic Report", styles["Heading1"]))
-    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("Journey Campaign Strategic Report", styles["Heading1"]))
+    elements.append(Spacer(1, 20))
 
-    for line in text.split("\n"):
-        elements.append(Paragraph(line.strip(), styles["Normal"]))
-        elements.append(Spacer(1, 8))
+    for line in text.split("\n"):
+        elements.append(Paragraph(line.strip(), styles["Normal"]))
+        elements.append(Spacer(1, 8))
 
-    doc.build(elements)
+    doc.build(elements)
 
-    return temp_pdf.name
-
+    return temp_pdf.name
 
 
 # --------------------------------------------------
@@ -350,34 +349,33 @@ def generate_pdf(text):
 # --------------------------------------------------
 if st.button("Generate AI Insights"):
 
-    if not uploaded_file:
-        st.error("Please upload Excel file.")
-        st.stop()
+    if not uploaded_file:
+        st.error("Please upload Excel file.")
+        st.stop()
 
-    if not groq_key:
-        st.error("Please enter Groq API key.")
-        st.stop()
+    if not groq_key:
+        st.error("Please enter Groq API key.")
+        st.stop()
 
-    documents = ingest_excel(uploaded_file)
+    documents = ingest_excel(uploaded_file)
 
-    if not documents:
-        st.error("No valid sheets found.")
-        st.stop()
+    if not documents:
+        st.error("No valid sheets found.")
+        st.stop()
 
-    insights = generate_insights(documents, groq_key)
+    insights = generate_insights(documents, groq_key)
 
-    pdf_path = generate_pdf(insights)
+    pdf_path = generate_pdf(insights)
 
-    st.success(":white_check_mark: Strategic Report Generated Successfully")
+    st.success(":white_check_mark: Strategic Report Generated Successfully")
 
-    with open(pdf_path, "rb") as f:
-        st.download_button(
-            label="Download PDF",
-            data=f,
-            file_name="Journey_Strategic_Report.pdf",
-            mime="application/pdf"
-        )
+    with open(pdf_path, "rb") as f:
+        st.download_button(
+            label="Download PDF",
+            data=f,
+            file_name="Journey_Strategic_Report.pdf",
+            mime="application/pdf"
+        )
 
-    st.subheader(":mag_right: Insight Preview")
-    st.write(insights)
-
+    st.subheader(":mag_right: Insight Preview")
+    st.write(insights)
