@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+openpyxl
+langchain
+langchain-groq
+langchain-community
+faiss-cpu
+sentence-transformers
+reportlab
