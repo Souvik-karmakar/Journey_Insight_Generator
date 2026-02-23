@@ -172,7 +172,7 @@ def generate_insights(documents, groq_key):
 
     llm = ChatGroq(
         groq_api_key=groq_key,
-        model_name="llama-3.1-8b-instant",
+        model_name="llama-3.3-70b-versatile",
         temperature=0.05
     )
 
@@ -305,3 +305,4 @@ if st.button("Generate AI Insights"):
 
     st.subheader("🔎 Insight Preview")
     st.write(insights)
+
