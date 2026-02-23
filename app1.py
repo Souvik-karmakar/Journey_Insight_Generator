@@ -44,7 +44,6 @@ def clean_sheet(file, sheet_name):
 
     return df
 
-
 # --------------------------------------------------
 # GRANULARITY DETECTION
 # --------------------------------------------------
@@ -68,11 +67,10 @@ def detect_granularity(sheet_name):
     else:
         return "Other"
 
-
 # --------------------------------------------------
-# KPI ENGINE
+# KPI ENGINE (CITY + WEEKDAY FIX APPLIED)
 # --------------------------------------------------
-def compute_metrics(df):
+def compute_metrics(df, granularity):
 
     metrics = {}
 
@@ -85,6 +83,7 @@ def compute_metrics(df):
         return (
             series.astype(str)
             .str.replace(",", "", regex=False)
+            .str.replace("%", "", regex=False)
             .replace(["", "nan", "None"], "0")
             .pipe(pd.to_numeric, errors="coerce")
             .fillna(0)
@@ -93,9 +92,6 @@ def compute_metrics(df):
     for col in [impressions_col, clicks_col, trips_col, ctr_col]:
         if col and col in df.columns:
             df[col] = clean_numeric(df[col])
-
-    if impressions_col:
-        df = df[df[impressions_col] > 0]
 
     total_impressions = df[impressions_col].sum() if impressions_col else 0
     total_clicks = df[clicks_col].sum() if clicks_col else 0
@@ -106,36 +102,44 @@ def compute_metrics(df):
     metrics["total_trips"] = float(total_trips)
 
     if ctr_col:
-        df["ctr_percent"] = df[ctr_col] * 100
+        df["ctr_percent"] = df[ctr_col]
+        if df["ctr_percent"].max() <= 1:
+            df["ctr_percent"] = df["ctr_percent"] * 100
     elif impressions_col and clicks_col:
         df["ctr_percent"] = (df[clicks_col] / df[impressions_col]) * 100
 
-    if "ctr_percent" in df.columns:
-        metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
+    metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
 
     identifier_candidates = [
         "ad_group_name", "ad_group",
         "category", "city",
         "place_name", "car_type",
-        "ad_name", "day"
+        "ad_name", "weekday", "day"
     ]
 
     id_col = next((col for col in identifier_candidates if col in df.columns), None)
 
-    ignore_values = ["0", "multi unit", "\\n", "\\N", "nan", None]
-
     if id_col:
-        df = df[~df[id_col].astype(str).str.lower().isin(ignore_values)]
 
-    if "ctr_percent" in df.columns:
-        df = df[df["ctr_percent"] > 0]
+        # 🔥 CITY FIX → Ignore cities with < 200 trips
+        if granularity == "City Level":
+            df = df[df[trips_col] >= 200]
 
-    if id_col and len(df) > 1:
+        # 🔥 WEEKDAY FIX → Compute peak & lowest inside Python
+        if granularity == "Day of Week Level":
+            df_sorted = df.sort_values(trips_col, ascending=False)
+            metrics["peak_day"] = {
+                "name": str(df_sorted.iloc[0][id_col]),
+                "trips": float(df_sorted.iloc[0][trips_col]),
+                "ctr_percent": round(float(df_sorted.iloc[0]["ctr_percent"]), 2)
+            }
+            metrics["lowest_day"] = {
+                "name": str(df_sorted.iloc[-1][id_col]),
+                "trips": float(df_sorted.iloc[-1][trips_col]),
+                "ctr_percent": round(float(df_sorted.iloc[-1]["ctr_percent"]), 2)
+            }
 
         df_sorted = df.sort_values(trips_col, ascending=False)
-
-        top = df_sorted.head(3)
-        bottom = df_sorted.tail(3)
 
         metrics["top_entities"] = [
             {
@@ -143,7 +147,7 @@ def compute_metrics(df):
                 "trips": float(row[trips_col]),
                 "ctr_percent": round(float(row["ctr_percent"]), 2)
             }
-            for _, row in top.iterrows()
+            for _, row in df_sorted.head(10).iterrows()
         ]
 
         metrics["bottom_entities"] = [
@@ -152,13 +156,12 @@ def compute_metrics(df):
                 "trips": float(row[trips_col]),
                 "ctr_percent": round(float(row["ctr_percent"]), 2)
             }
-            for _, row in bottom.iterrows()
+            for _, row in df_sorted.tail(5).iterrows()
         ]
 
     metrics["row_count"] = len(df)
 
     return metrics
-
 
 # --------------------------------------------------
 # INGEST EXCEL
@@ -176,7 +179,7 @@ def ingest_excel(file):
             continue
 
         granularity = detect_granularity(sheet)
-        metrics = compute_metrics(df)
+        metrics = compute_metrics(df, granularity)
 
         structured_content = f"""
 Granularity: {granularity}
@@ -195,9 +198,8 @@ KPIs:
 
     return documents
 
-
 # --------------------------------------------------
-# LLM STRATEGIC GENERATION
+# LLM (UNCHANGED)
 # --------------------------------------------------
 def generate_insights(documents, groq_key):
 
@@ -304,6 +306,7 @@ Week 3:
 Week 4:
 
 === Strategic Recommendation ===
+
 provide overall takeaways and strategic recommendation 
 
 Be data-driven.
@@ -311,13 +314,11 @@ Use actual numbers.
 Avoid repetition.
 Executive tone.
 """
-
     response = llm.invoke(prompt)
     return response.content
 
-
 # --------------------------------------------------
-# PDF GENERATION
+# PDF GENERATION (UNCHANGED)
 # --------------------------------------------------
 def generate_pdf(text):
 
@@ -337,9 +338,8 @@ def generate_pdf(text):
 
     return temp_pdf.name
 
-
 # --------------------------------------------------
-# MAIN
+# MAIN (UNCHANGED)
 # --------------------------------------------------
 if st.button("Generate AI Insights"):
 
@@ -372,4 +372,4 @@ if st.button("Generate AI Insights"):
         )
 
     st.subheader("🔎 Insight Preview")
-    st.write(insights)
+    st.write(insights)  
