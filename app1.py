@@ -214,7 +214,7 @@ def generate_insights(documents, groq_key):
 
     context = "\n\n".join([doc.page_content for doc in documents])
 
-   prompt = f"""
+    prompt = f"""
 You are a Senior Reatil media Architect, you are good at insight generation and provide strategic recommendation .
 
 Below is structured campaign KPI data:
@@ -379,3 +379,4 @@ if st.button("Generate AI Insights"):
 
     st.subheader(":mag_right: Insight Preview")
     st.write(insights)
+
