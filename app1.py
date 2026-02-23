@@ -8,6 +8,7 @@ from langchain_groq import ChatGroq
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
+
 # --------------------------------------------------
 # PAGE CONFIG
 # --------------------------------------------------
@@ -17,6 +18,7 @@ st.markdown("Upload Excel + Enter Groq API Key → Generate Executive PDF")
 
 groq_key = st.text_input("Enter Groq API Key", type="password")
 uploaded_file = st.file_uploader("Upload Excel File (.xlsx)", type=["xlsx"])
+
 
 # --------------------------------------------------
 # SMART SHEET CLEANING
@@ -85,7 +87,6 @@ def compute_metrics(df):
         return (
             series.astype(str)
             .str.replace(",", "", regex=False)
-            .str.replace("%", "", regex=False)
             .replace(["", "nan", "None"], "0")
             .pipe(pd.to_numeric, errors="coerce")
             .fillna(0)
@@ -95,45 +96,28 @@ def compute_metrics(df):
         if col and col in df.columns:
             df[col] = clean_numeric(df[col])
 
-    # Totals
-    metrics["total_impressions"] = float(df[impressions_col].sum()) if impressions_col else 0
-    metrics["total_clicks"] = float(df[clicks_col].sum()) if clicks_col else 0
-    metrics["total_trips"] = float(df[trips_col].sum()) if trips_col else 0
+    total_impressions = df[impressions_col].sum() if impressions_col else 0
+    total_clicks = df[clicks_col].sum() if clicks_col else 0
+    total_trips = df[trips_col].sum() if trips_col else 0
 
-    # CTR
+    metrics["total_impressions"] = float(total_impressions)
+    metrics["total_clicks"] = float(total_clicks)
+    metrics["total_trips"] = float(total_trips)
+
     if ctr_col:
         df["ctr_percent"] = df[ctr_col]
     elif impressions_col and clicks_col:
         df["ctr_percent"] = (df[clicks_col] / df[impressions_col]) * 100
 
-    metrics["avg_ctr_percent"] = round(df["ctr_percent"].mean(), 2) if "ctr_percent" in df.columns else 0
-
-    # Identifier
-    identifier_candidates = [
-        "ad_group_name", "ad_group",
-        "category", "city",
-        "place_name", "car_type",
-        "ad_name", "weekday", "day"
-    ]
-
-    id_col = next((col for col in identifier_candidates if col in df.columns), None)
-
-    ignore_values = ["0", "multi unit", "\\n", "\\N", "nan", None]
-
-    if id_col:
-        df = df[~df[id_col].astype(str).str.lower().isin(ignore_values)]
-
     if "ctr_percent" in df.columns:
-        df = df[df["ctr_percent"] > 0]
+        metrics["avg_ctr_percent"] = round(float(df["ctr_percent"].mean()), 2)
 
-    # 🔥 IMPORTANT: send FULL ranked table (not only top 3)
-    if id_col and trips_col and len(df) > 1:
-
+    if trips_col and "ctr_percent" in df.columns:
         df_sorted = df.sort_values(trips_col, ascending=False)
 
-        metrics["ranked_entities"] = [
+        metrics["entities"] = [
             {
-                "name": str(row[id_col]),
+                "name": str(row[df.columns[0]]),
                 "trips": float(row[trips_col]),
                 "ctr_percent": round(float(row["ctr_percent"]), 2)
             }
@@ -182,103 +166,73 @@ KPIs:
 
 
 # --------------------------------------------------
-# LLM STRATEGIC GENERATION
+# LLM STRATEGIC GENERATION (STRICT NUMERIC CONTROL)
 # --------------------------------------------------
 def generate_insights(documents, groq_key):
 
     llm = ChatGroq(
         groq_api_key=groq_key,
         model_name="llama-3.1-8b-instant",
-        temperature=0.15
+        temperature=0.05
     )
 
     context = "\n\n".join([doc.page_content for doc in documents])
 
     prompt = f"""
-You are a Senior Retail Media Performance insight generation Expert.
+You are a Senior Retail Media Strategy Consultant you have technical as well as business knowledge.
 
-Below is structured campaign KPI data:
+Below is structured KPI data in JSON format.
+You MUST use ONLY the numbers present inside the JSON.
+DO NOT invent, estimate, or modify any values.
 
 {context}
 
-IMPORTANT RULES:
+CRITICAL RULES:
 
-1. Use ONLY:
-   - Total Impressions
-   - Total Clicks
-   - Total Trips
-   - CTR %
-   - Top Entities
-   - Bottom Entities
+1. Use EXACT trip numbers from JSON.
+2. CTR % must be rounded to 2 decimal places.
+3. Weak entity must have BOTH low CTR and low Trips.
+4. High CTR but very low trips (1–10 trips) should NOT be treated as strong.
+5. Peak weekday = High CTR + Strong Trip Volume.
+6. If weekday has highest CTR but moderate trips, highlight engagement strength.
+7. Recommendations must be realistic and gentle (5% shift max).
+8. No exaggerated claims (no "increase 15% performance").
+9. Be practical and executive.
+10.provide structured actionable recommendations 
+11.Strong categories should be highlighted based on high CTR and Strong Trip Volume
+12.Strong cities should be highlighted based on high CTR and Strong Trip Volume
+13.Strong Car Type should be highlighted based on high CTR and Strong Trip Volume
+14. At Last provide one overall summary of whole Zeast of recommendation adn takeaways.
 
-2. NEVER:
-   - Recommend increasing budget for weak entities
-   - Call high CTR (above campaign average) as weak
-   - Repeat generic "moderate CTR risk" statements
-   - Mention Trip Rate
-
-3. Logic Rules:
-   - Strong = Higher CTR + Higher Total Trips
-   - Weak = Lower CTR + Lower Total Trips
-   - If metrics are similar across entities → state “Performance is evenly distributed”
-
-4. Category Level:
-   - Focus ONLY on Top 5 categories by Total Trips
-   - Call out 2 strongest with good amount of trip and good CTR  and 2 weakest properly with less CTR
-
-5. City Level:
-   - Focus ONLY on Top 10 cities by Total Trips
-   - Identify cities with BOTH good CTR and high Trips as strong
-   - Identify cities with low CTR  as weak
-
-6. Weekday Level:
-   - Rank days by Total Trips and Strong CTR
-   - Identify Peak Day (highest trips and Strong CTR)
-   - Identify Lowest Day (low CTR)
-   - Recommend weekday budget shift strategy
-
-7. Budget Strategy:
-   - Suggest realistic shift (5%–20%)
-   - Shift budget FROM weak TO strong only
-
-Structure output EXACTLY as:
+Structure EXACTLY:
 
 === Overall Campaign Level ===
 
 Performance Diagnosis:
 
-=== Ad Group Level ===
-
-Performance Diagnosis:
-
-=== Category Level (Top 5 Only) ===
+=== Category Level (Top 5 by Trips) ===
 
 Strong Categories:
 Weak Categories:
-Budget Reallocation:
-Scaling Opportunity:
-Risk:
+Recommendation:
 
-=== City Level (Top 10 Only) ===
+=== City Level (Top 10 by Trips) ===
 
 Strong Cities:
 Weak Cities:
-Geo Budget Strategy:
-Scaling Plan:
-Risk:
+Recommendation:
 
 === Car Type Level ===
+
 Strong Ride Types:
 Weak Ride Types:
-Allocation Strategy:
-Risk:
+Recommendation:
 
 === Weekday Level ===
 
-Peak Day:
-Lowest Day:
-Weekday Budget Strategy:
-Risk:
+Peak Engagement Day:
+Lowest Efficiency Day:
+Recommendation:
 
 === 30 DAY EXECUTION PLAN ===
 
@@ -287,10 +241,7 @@ Week 2:
 Week 3:
 Week 4:
 
-Be data-driven.
-Use actual numbers.
-Avoid repetition.
-Executive tone.
+Use authentic business tone.
 """
 
     response = llm.invoke(prompt)
@@ -353,6 +304,4 @@ if st.button("Generate AI Insights"):
         )
 
     st.subheader("🔎 Insight Preview")
-
     st.write(insights)
-
